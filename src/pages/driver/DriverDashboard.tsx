@@ -12,49 +12,70 @@ import {
   CheckCircle, Clock, MapPin, Send
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { collection, addDoc, serverTimestamp, updateDoc, doc } from 'firebase/firestore';
+import { db } from '@/firebase';
 
 export default function DriverDashboard() {
   const { user } = useAuth();
   const driver = user as Driver;
   const { toast } = useToast();
-  
+
   const [tripActive, setTripActive] = useState(false);
   const [busStatus, setBusStatus] = useState<'online' | 'delayed' | 'breakdown'>('online');
-  
+
   const assignedBus = mockBuses.find(b => b.id === driver?.busId);
   const route = mockRoutes.find(r => r.id === assignedBus?.routeId);
   const assignedStudents = mockStudents.filter(s => s.busId === driver?.busId);
 
-  const handleStartTrip = () => {
+  const handleStartTrip = async () => {
     setTripActive(true);
-    toast({
-      title: 'Trip Started',
-      description: 'GPS tracking is now active. Drive safely!',
-    });
+    if (assignedBus) {
+      await updateDoc(doc(db, 'buses', assignedBus.id), { status: 'online' });
+    }
+    toast({ title: 'Trip Started', description: 'GPS tracking is now active.' });
   };
 
-  const handleEndTrip = () => {
+  const handleEndTrip = async () => {
     setTripActive(false);
-    toast({
-      title: 'Trip Ended',
-      description: 'GPS tracking stopped. Trip data saved.',
-    });
+    if (assignedBus) {
+      await updateDoc(doc(db, 'buses', assignedBus.id), { status: 'offline' });
+    }
+    toast({ title: 'Trip Ended', description: 'Trip data saved.' });
   };
 
-  const handleStatusChange = (status: 'online' | 'delayed' | 'breakdown') => {
+  const handleStatusChange = async (status: 'online' | 'delayed' | 'breakdown') => {
     setBusStatus(status);
-    toast({
-      title: 'Status Updated',
-      description: `Bus status changed to ${status}`,
-    });
+    if (assignedBus) {
+      await updateDoc(doc(db, 'buses', assignedBus.id), { status });
+    }
+    toast({ title: 'Status Updated', description: `Bus status changed to ${status}` });
   };
 
-  const handlePanic = () => {
+  const handlePanic = async () => {
+    await addDoc(collection(db, 'notifications'), {
+      title: 'Emergency Alert',
+      message: `Driver ${driver.name} pressed panic button`,
+      target: 'admin',
+      createdAt: serverTimestamp()
+    });
+
     toast({
       title: 'Emergency Alert Sent!',
-      description: 'Admin and emergency contacts have been notified.',
+      description: 'Admin has been notified.',
       variant: 'destructive',
     });
+  };
+
+  const reportBreakdown = async () => {
+    if (!assignedBus) return;
+    await addDoc(collection(db, 'breakdown_reports'), {
+      busId: assignedBus.id,
+      driverId: driver.id,
+      issue: 'Bus breakdown reported',
+      status: 'pending',
+      createdAt: serverTimestamp()
+    });
+    toast({ title: 'Issue Reported', description: 'Admin has been notified.' });
   };
 
   return (
@@ -71,8 +92,7 @@ export default function DriverDashboard() {
             </p>
           </div>
           <Button variant="panic" size="lg" onClick={handlePanic}>
-            <AlertTriangle className="w-5 h-5" />
-            Panic Button
+            <AlertTriangle className="w-5 h-5" /> Panic Button
           </Button>
         </div>
 
@@ -95,17 +115,15 @@ export default function DriverDashboard() {
                 </div>
               </div>
             </div>
-            
+
             <div className="flex gap-3">
               {!tripActive ? (
                 <Button variant="success" size="lg" onClick={handleStartTrip}>
-                  <Play className="w-5 h-5" />
-                  Start Trip
+                  <Play className="w-5 h-5" /> Start Trip
                 </Button>
               ) : (
                 <Button variant="danger" size="lg" onClick={handleEndTrip}>
-                  <Square className="w-5 h-5" />
-                  End Trip
+                  <Square className="w-5 h-5" /> End Trip
                 </Button>
               )}
             </div>
@@ -115,29 +133,14 @@ export default function DriverDashboard() {
             <div className="mt-6 pt-6 border-t border-border">
               <p className="text-sm text-muted-foreground mb-3">Update Bus Status:</p>
               <div className="flex flex-wrap gap-2">
-                <Button 
-                  variant={busStatus === 'online' ? 'success' : 'outline'} 
-                  size="sm"
-                  onClick={() => handleStatusChange('online')}
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  On Time
+                <Button variant={busStatus === 'online' ? 'success' : 'outline'} size="sm" onClick={() => handleStatusChange('online')}>
+                  <CheckCircle className="w-4 h-4" /> On Time
                 </Button>
-                <Button 
-                  variant={busStatus === 'delayed' ? 'warning' : 'outline'} 
-                  size="sm"
-                  onClick={() => handleStatusChange('delayed')}
-                >
-                  <Clock className="w-4 h-4" />
-                  Delayed
+                <Button variant={busStatus === 'delayed' ? 'warning' : 'outline'} size="sm" onClick={() => handleStatusChange('delayed')}>
+                  <Clock className="w-4 h-4" /> Delayed
                 </Button>
-                <Button 
-                  variant={busStatus === 'breakdown' ? 'danger' : 'outline'} 
-                  size="sm"
-                  onClick={() => handleStatusChange('breakdown')}
-                >
-                  <AlertTriangle className="w-4 h-4" />
-                  Breakdown
+                <Button variant={busStatus === 'breakdown' ? 'danger' : 'outline'} size="sm" onClick={() => handleStatusChange('breakdown')}>
+                  <AlertTriangle className="w-4 h-4" /> Breakdown
                 </Button>
               </div>
             </div>
@@ -146,94 +149,40 @@ export default function DriverDashboard() {
 
         {/* Stats */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Students Assigned"
-            value={assignedStudents.length}
-            icon={<Users className="w-6 h-6" />}
-            variant="primary"
-          />
-          <StatCard
-            title="Total Stops"
-            value={route?.stops.length || 0}
-            icon={<MapPin className="w-6 h-6" />}
-          />
-          <StatCard
-            title="Trip Duration"
-            value={tripActive ? '45 min' : '--'}
-            icon={<Clock className="w-6 h-6" />}
-          />
-          <StatCard
-            title="GPS Updates"
-            value={tripActive ? 'Active' : 'Stopped'}
-            icon={<Navigation className="w-6 h-6" />}
-            variant={tripActive ? 'success' : 'default'}
-          />
+          <StatCard title="Students Assigned" value={assignedStudents.length} icon={<Users />} variant="primary" />
+          <StatCard title="Total Stops" value={route?.stops.length || 0} icon={<MapPin />} />
+          <StatCard title="Trip Duration" value={tripActive ? '45 min' : '--'} icon={<Clock />} />
+          <StatCard title="GPS Updates" value={tripActive ? 'Active' : 'Stopped'} icon={<Navigation />} variant={tripActive ? 'success' : 'default'} />
         </div>
 
-        {/* Map & Students */}
-        <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-card rounded-xl shadow-soft p-4">
-            <h2 className="font-display font-bold text-lg mb-4">Route Map</h2>
-            <MapPlaceholder 
-              buses={assignedBus ? [{
-                id: assignedBus.id,
-                number: assignedBus.number,
-                status: busStatus,
-                lat: 12.9716,
-                lng: 77.5946,
-              }] : []}
-              showRoute
-              height="h-[350px]"
-            />
-          </div>
-
-          {/* Student List */}
-          <div className="bg-card rounded-xl shadow-soft p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-display font-bold text-lg">Today's Passengers</h2>
-              <span className="text-sm text-muted-foreground">{assignedStudents.length} students</span>
-            </div>
-            <div className="space-y-3 max-h-[350px] overflow-y-auto">
-              {assignedStudents.map(student => {
-                const studentStop = route?.stops.find(s => s.id === student.stopId);
-                return (
-                  <div key={student.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-medium">
-                      {student.name.charAt(0)}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{student.name}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {studentStop?.name} • {studentStop?.arrivalTime}
-                      </p>
-                    </div>
-                    <Button variant="ghost" size="icon-sm">
-                      <CheckCircle className="w-4 h-4" />
-                    </Button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+        {/* Map */}
+        <div className="bg-card rounded-xl shadow-soft p-4">
+          <MapPlaceholder
+            buses={assignedBus ? [{
+              id: assignedBus.id,
+              number: assignedBus.number,
+              status: busStatus,
+              lat: 12.9716,
+              lng: 77.5946
+            }] : []}
+            showRoute
+            height="h-[350px]"
+          />
         </div>
 
         {/* Quick Actions */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Button variant="outline" size="lg" className="h-auto py-4 flex-col gap-2">
-            <Users className="w-6 h-6" />
-            <span>Mark Attendance</span>
+            <Users className="w-6 h-6" /> <span>Mark Attendance</span>
+          </Button>
+          <Button variant="outline" size="lg" className="h-auto py-4 flex-col gap-2" onClick={reportBreakdown}>
+            <AlertTriangle className="w-6 h-6" /> <span>Report Issue</span>
           </Button>
           <Button variant="outline" size="lg" className="h-auto py-4 flex-col gap-2">
-            <AlertTriangle className="w-6 h-6" />
-            <span>Report Issue</span>
+            <Send className="w-6 h-6" /> <span>Send Alert</span>
           </Button>
           <Button variant="outline" size="lg" className="h-auto py-4 flex-col gap-2">
-            <Send className="w-6 h-6" />
-            <span>Send Alert</span>
-          </Button>
-          <Button variant="outline" size="lg" className="h-auto py-4 flex-col gap-2">
-            <Clock className="w-6 h-6" />
-            <span>Delay Notice</span>
+            <Clock className="w-6 h-6" /> <span>Delay Notice</span>
           </Button>
         </div>
       </div>

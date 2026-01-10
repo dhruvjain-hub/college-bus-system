@@ -4,15 +4,15 @@ import React, {
   useEffect,
   useState,
   ReactNode,
-} from 'react';
+} from "react";
 import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
-} from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '@/firebase';
-import { User, UserRole } from '@/lib/types';
+} from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { auth, db } from "@/firebase";
+import { User, UserRole } from "@/lib/types";
 
 interface AuthContextType {
   user: User | null;
@@ -30,11 +30,9 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState(true);
 
-  /**
-   * 🔁 Restore session on refresh
-   */
+  // 🔁 Restore session
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (!firebaseUser) {
@@ -44,21 +42,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const userRef = doc(db, 'users', firebaseUser.uid);
+        const userRef = doc(db, "users", firebaseUser.uid);
         const snap = await getDoc(userRef);
 
         if (snap.exists()) {
-          const userData = snap.data() as Omit<User, 'id'>;
+          const data = snap.data() as Omit<User, "id">;
 
           setUser({
-            id: firebaseUser.uid, // ✅ FIXED
-            ...userData,
+            id: firebaseUser.uid,
+            ...data,
           });
         } else {
+          console.warn("No Firestore user document found.");
           setUser(null);
         }
       } catch (error) {
-        console.error('Auth restore error:', error);
+        console.error("Auth restore error:", error);
         setUser(null);
       } finally {
         setLoading(false);
@@ -68,9 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => unsubscribe();
   }, []);
 
-  /**
-   * 🔐 Login
-   */
+  // 🔐 Login
   const login = async (
     email: string,
     password: string,
@@ -79,34 +76,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true);
 
     try {
-      const credential = await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+      const credential = await signInWithEmailAndPassword(auth, email, password);
       const firebaseUser = credential.user;
 
-      const userRef = doc(db, 'users', firebaseUser.uid);
+      const userRef = doc(db, "users", firebaseUser.uid);
       const snap = await getDoc(userRef);
 
-      if (!snap.exists()) {
-        throw new Error('User record not found');
-      }
+      if (!snap.exists()) throw new Error("Firestore user not found");
 
-      const userData = snap.data() as Omit<User, 'id'>;
+      const data = snap.data() as Omit<User, "id">;
 
-      if (userData.role !== selectedRole) {
-        throw new Error('Role mismatch');
-      }
+      if (data.role !== selectedRole)
+        throw new Error("Role mismatch");
 
-      setUser({
-        id: firebaseUser.uid, // ✅ FIXED
-        ...userData,
-      });
+      setUser({ id: firebaseUser.uid, ...data });
 
       return true;
     } catch (error) {
-      console.error('Login error:', error);
+      console.error("Login error:", error);
       return false;
     } finally {
       setLoading(false);
@@ -120,13 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        login,
-        logout,
-        loading,
-      }}
+      value={{ user, isAuthenticated: !!user, login, logout, loading }}
     >
       {children}
     </AuthContext.Provider>
@@ -134,9 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
 }
