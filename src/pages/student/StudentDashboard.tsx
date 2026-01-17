@@ -5,38 +5,48 @@ import { BusCard } from '@/components/shared/BusCard';
 import { NotificationCard } from '@/components/shared/NotificationCard';
 import { MapPlaceholder } from '@/components/shared/MapPlaceholder';
 import { Button } from '@/components/ui/button';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { mockBuses, mockRoutes, mockNotifications, mockStops } from '@/lib/mock-data';
+import { mockBuses, mockRoutes, mockStops } from '@/lib/mock-data';
 import { useAuth } from '@/contexts/AuthContext';
-import { Student } from '@/lib/types';
-import { Bus, MapPin, Clock, AlertTriangle, Calendar, Phone, Navigation } from 'lucide-react';
+import { Student, Notification } from '@/lib/types';
+import { Bus, MapPin, Clock, AlertTriangle, Calendar, Navigation } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { collection, addDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '@/firebase';
 
 export default function StudentDashboard() {
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
+
+  // 🔐 AUTH GUARD
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
+
   const student = user as Student;
 
-  // KEEP UI DATA
-  const assignedBus = mockBuses.find(b => b.id === student?.busId);
+  // UI DATA
+  const assignedBus = mockBuses.find(b => b.id === student.busId);
   const route = mockRoutes.find(r => r.id === assignedBus?.routeId);
-  const stop = mockStops.find(s => s.id === student?.stopId);
-  const unreadNotifications = mockNotifications.filter(n => !n.read);
+  const stop = mockStops.find(s => s.id === student.stopId);
 
-  // REAL NOTIFICATIONS FROM FIRESTORE
-  const [liveNotifications, setLiveNotifications] = useState<any[]>([]);
+  // 🔔 LIVE NOTIFICATIONS
+  const [liveNotifications, setLiveNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
-    if (!student) return;
-
-    const unsub = onSnapshot(collection(db, "notifications"), snap => {
+    const unsub = onSnapshot(collection(db, 'notifications'), snap => {
       const filtered = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .filter((n:any) =>
-          n.targetType === "all" ||
-          (n.targetType === "bus" && n.targetId === student.busId) ||
-          (n.targetType === "student" && n.targetId === student.id)
+        .map(d => ({ id: d.id, ...d.data() } as Notification))
+        .filter(n =>
+          n.targetType === 'all' ||
+          (n.targetType === 'bus' && n.targetId === student.busId) ||
+          (n.targetType === 'student' && n.targetId === student.id)
         );
 
       setLiveNotifications(filtered.reverse());
@@ -46,22 +56,22 @@ export default function StudentDashboard() {
   }, [student]);
 
   const raiseMissedBusRequest = async () => {
-    if (!student || !navigator.geolocation) {
-      alert("Enable location access.");
+    if (!navigator.geolocation) {
+      alert('Enable location access.');
       return;
     }
 
     navigator.geolocation.getCurrentPosition(async pos => {
-      await addDoc(collection(db, "missed_bus_requests"), {
+      await addDoc(collection(db, 'missed_bus_requests'), {
         studentId: student.id,
         busId: student.busId,
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
-        status: "pending",
-        createdAt: serverTimestamp()
+        status: 'pending',
+        createdAt: serverTimestamp(),
       });
 
-      alert("Missed bus request sent.");
+      alert('Missed bus request sent.');
     });
   };
 
@@ -71,17 +81,21 @@ export default function StudentDashboard() {
 
         {/* HEADER */}
         <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Good Morning, {student?.name?.split(" ")[0]}</h1>
+          <h1 className="text-3xl font-bold">
+            Good Morning, {student.name.split(' ')[0]}
+          </h1>
           <Link to="/student/track">
-            <Button variant="hero"><Navigation className="w-4 h-4" /> Track My Bus</Button>
+            <Button variant="hero">
+              <Navigation className="w-4 h-4" /> Track My Bus
+            </Button>
           </Link>
         </div>
 
         {/* STATS */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard title="My Bus" value={assignedBus?.number || "N/A"} icon={<Bus />} />
-          <StatCard title="Pickup Stop" value={stop?.name || "N/A"} icon={<MapPin />} />
-          <StatCard title="Pickup Time" value={stop?.arrivalTime || "08:00"} icon={<Clock />} />
+          <StatCard title="My Bus" value={assignedBus?.number || 'N/A'} icon={<Bus />} />
+          <StatCard title="Pickup Stop" value={stop?.name || 'N/A'} icon={<MapPin />} />
+          <StatCard title="Pickup Time" value={stop?.arrivalTime || '08:00'} icon={<Clock />} />
           <StatCard title="Pass Validity" value="185 days" icon={<Calendar />} />
         </div>
 
@@ -89,13 +103,19 @@ export default function StudentDashboard() {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-card p-4 rounded-xl">
             <MapPlaceholder
-              buses={assignedBus ? [{
-                id: assignedBus.id,
-                number: assignedBus.number,
-                status: assignedBus.status,
-                lat: assignedBus.currentLocation?.lat || 0,
-                lng: assignedBus.currentLocation?.lng || 0
-              }] : []}
+              buses={
+                assignedBus
+                  ? [
+                      {
+                        id: assignedBus.id,
+                        number: assignedBus.number,
+                        status: assignedBus.status,
+                        lat: assignedBus.currentLocation?.lat || 0,
+                        lng: assignedBus.currentLocation?.lng || 0,
+                      },
+                    ]
+                  : []
+              }
               showRoute
               height="h-[300px]"
             />
@@ -113,7 +133,7 @@ export default function StudentDashboard() {
         <div className="bg-card p-5 rounded-xl">
           <h2 className="font-bold mb-3">Notifications</h2>
 
-          {[...liveNotifications, ...mockNotifications].slice(0,3).map(n => (
+          {liveNotifications.slice(0, 3).map(n => (
             <NotificationCard key={n.id} notification={n} />
           ))}
         </div>

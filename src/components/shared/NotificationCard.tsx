@@ -18,11 +18,13 @@ const typeConfig = {
 };
 
 export function NotificationCard({ notification, onDismiss, onRead }: NotificationCardProps) {
-  const config = typeConfig[notification.type];
+  const config =
+    typeConfig[notification.type as keyof typeof typeConfig] ||
+    typeConfig.info;
   const Icon = config.icon;
 
   return (
-    <div 
+    <div
       className={cn(
         'relative p-4 rounded-xl bg-card shadow-soft transition-all hover:shadow-medium',
         !notification.read && 'border-l-4 border-l-accent'
@@ -52,8 +54,16 @@ export function NotificationCard({ notification, onDismiss, onRead }: Notificati
           </div>
           <p className="text-sm text-muted-foreground mt-1">{notification.message}</p>
           <p className="text-xs text-muted-foreground mt-2">
-            {formatDistanceToNow(new Date(notification.timestamp), { addSuffix: true })}
+            {notification.createdAt
+              ? formatDistanceToNow(
+                notification.createdAt.toDate
+                  ? notification.createdAt.toDate()
+                  : new Date(notification.createdAt),
+                { addSuffix: true }
+              )
+              : "Just now"}
           </p>
+
         </div>
       </div>
       {!notification.read && (

@@ -83,12 +83,19 @@ export interface Notification {
   id: string;
   title: string;
   message: string;
-  type: 'info' | 'warning' | 'success' | 'danger';
-  timestamp: string;
-  read: boolean;
-  targetRole?: UserRole;
-  targetUserId?: string;
+
+  // UI related
+  type?: 'info' | 'warning' | 'success' | 'danger';
+  read?: boolean;
+
+  // Targeting
+  targetType?: 'all' | 'bus' | 'student';
+  targetId?: string | null;
+
+  // Time (Firestore compatible)
+  createdAt?: any;
 }
+
 
 export interface Attendance {
   id: string;

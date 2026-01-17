@@ -189,16 +189,24 @@ export default function AdminDashboard() {
                 </SelectContent>
               </Select>
 
-              {targetType !== "all" && (
+              {targetType === "student" && (
                 <>
-                  <Label>Target ID</Label>
-                  <input
-                    className="w-full rounded-md border px-3 py-2 text-sm"
-                    placeholder="Enter Bus ID or Student ID"
-                    onChange={e => setTargetId(e.target.value)}
-                  />
+                  <Label>Select Student</Label>
+                  <Select onValueChange={value => setTargetId(value)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select Student" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {students.map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name} ({s.email})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </>
               )}
+
 
               <Button onClick={sendCustomNotification}>Send</Button>
             </DialogContent>
