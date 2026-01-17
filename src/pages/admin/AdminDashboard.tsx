@@ -16,7 +16,12 @@ import LiveFleetMap from "@/components/maps/LiveFleetMap";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
-  Bus, Users, AlertTriangle, CheckCircle, Clock, Send
+  Bus,
+  Users,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Send
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { db } from "@/firebase";
@@ -36,9 +41,10 @@ import {
   SelectContent,
   SelectItem
 } from "@/components/ui/select";
+import { writeBatch } from "firebase/firestore";
+import { useNavigate } from "react-router-dom";
 
 export default function AdminDashboard() {
-
   /* ===================== AUTO MESSAGE TEMPLATES ===================== */
   const notificationTemplates: Record<string, string> = {
     "Bus Delay Alert":
@@ -54,16 +60,26 @@ export default function AdminDashboard() {
   };
 
   /* ===================== STATES ===================== */
-  const [selectedBus, setSelectedBus] = useState<string | null>(null);
   const [buses, setBuses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [missedRequests, setMissedRequests] = useState<any[]>([]);
 
+  // Notification
   const [notifOpen, setNotifOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
-  const [targetType, setTargetType] = useState<"all" | "bus" | "student">("all");
+  const [targetType, setTargetType] =
+    useState<"all" | "bus" | "student">("all");
   const [targetId, setTargetId] = useState("");
+  const navigate = useNavigate();
+
+  // Rescue Assignment
+  const [activeRequest, setActiveRequest] = useState<any | null>(null);
+  const [rescueBusId, setRescueBusId] = useState("");
+
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [drivers, setDrivers] = useState<any[]>([]);
+
 
   /* ===================== SEND NOTIFICATION ===================== */
   const sendCustomNotification = async () => {
@@ -86,17 +102,38 @@ export default function AdminDashboard() {
     setTargetId("");
   };
 
-  /* ===================== ASSIGN RESCUE ===================== */
-  const assignRescue = async (requestId: string) => {
-    if (!selectedBus) return alert("Select a bus first");
+  /* ===================== CONFIRM RESCUE ASSIGNMENT ===================== */
+  const confirmRescueAssignment = async () => {
+    if (!activeRequest || !rescueBusId) return;
 
-    await updateDoc(doc(db, "missed_bus_requests", requestId), {
-      status: "assigned",
-      assignedBusId: selectedBus,
-      assignedAt: serverTimestamp()
-    });
+    try {
+      const batch = writeBatch(db);
 
-    alert("Rescue Assigned Successfully");
+      const requestRef = doc(db, "missed_bus_requests", activeRequest.id);
+      const busRef = doc(db, "buses", rescueBusId);
+
+      // 1️⃣ Update request
+      batch.update(requestRef, {
+        status: "assigned",
+        assignedBusId: rescueBusId,
+        assignedAt: serverTimestamp()
+      });
+
+      // 2️⃣ Update bus
+      batch.update(busRef, {
+        status: "rescue_assigned"
+      });
+
+      await batch.commit();
+
+      setActiveRequest(null);
+      setRescueBusId("");
+
+      alert("Rescue bus assigned successfully");
+    } catch (error) {
+      console.error(error);
+      alert("Failed to assign rescue");
+    }
   };
 
   /* ===================== FIREBASE LISTENERS ===================== */
@@ -115,12 +152,37 @@ export default function AdminDashboard() {
       s => setMissedRequests(s.docs.map(d => ({ id: d.id, ...d.data() })))
     );
 
-    return () => { u1(); u2(); u3(); };
+    const u4 = onSnapshot(collection(db, "routes"), snap =>
+      setRoutes(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+
+    const u5 = onSnapshot(
+      query(collection(db, "users"), where("role", "==", "driver")),
+      snap => setDrivers(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    );
+
+
+    return () => {
+      u1();
+      u2();
+      u3();
+      u4();
+      u5();
+    };
   }, []);
 
+  /* ===================== DERIVED DATA ===================== */
   const activeBuses = buses.filter(b => b.status === "online");
   const delayedBuses = buses.filter(b => b.status === "delayed");
   const pendingRequests = missedRequests.filter(r => r.status === "pending");
+
+  const rescueBuses = buses.filter(b => b.status === "online");
+
+  const getRouteName = (routeId?: string) =>
+    routes.find(r => r.id === routeId)?.routeName || "No route";
+
+  const getDriverName = (driverId?: string) =>
+    drivers.find(d => d.id === driverId)?.name || "No driver";
 
   /* ===================== UI ===================== */
   return (
@@ -131,13 +193,17 @@ export default function AdminDashboard() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">Transport Dashboard</h1>
-            <p className="text-muted-foreground">Live overview of transport system</p>
+            <p className="text-muted-foreground">
+              Live overview of transport system
+            </p>
           </div>
 
+          {/* SEND NOTIFICATION */}
           <Dialog open={notifOpen} onOpenChange={setNotifOpen}>
             <DialogTrigger asChild>
               <Button variant="outline">
-                <Send className="w-4 h-4 mr-2" /> Send Notification
+                <Send className="w-4 h-4 mr-2" />
+                Send Notification
               </Button>
             </DialogTrigger>
 
@@ -146,10 +212,9 @@ export default function AdminDashboard() {
                 <DialogTitle>Send Notification</DialogTitle>
               </DialogHeader>
 
-              {/* NOTIFICATION TYPE */}
               <Label>Notification Type</Label>
               <Select
-                onValueChange={(value) => {
+                onValueChange={value => {
                   setTitle(value);
                   setMessage(notificationTemplates[value] || "");
                 }}
@@ -158,25 +223,22 @@ export default function AdminDashboard() {
                   <SelectValue placeholder="Select Notification Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Bus Delay Alert">Bus Delay Alert</SelectItem>
-                  <SelectItem value="Route Change">Route Change</SelectItem>
-                  <SelectItem value="Emergency Update">Emergency Update</SelectItem>
-                  <SelectItem value="Missed Bus Information">Missed Bus Information</SelectItem>
-                  <SelectItem value="General Announcement">General Announcement</SelectItem>
+                  {Object.keys(notificationTemplates).map(t => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
 
-              {/* MESSAGE */}
               <Label>Message</Label>
               <textarea
                 className="w-full rounded-md border px-3 py-2 text-sm"
                 rows={3}
                 value={message}
                 onChange={e => setMessage(e.target.value)}
-                placeholder="Enter notification message"
               />
 
-              {/* TARGET */}
               <Label>Target</Label>
               <Select onValueChange={(v: any) => setTargetType(v)}>
                 <SelectTrigger>
@@ -184,7 +246,6 @@ export default function AdminDashboard() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Students</SelectItem>
-                  <SelectItem value="bus">Specific Bus</SelectItem>
                   <SelectItem value="student">Single Student</SelectItem>
                 </SelectContent>
               </Select>
@@ -192,7 +253,7 @@ export default function AdminDashboard() {
               {targetType === "student" && (
                 <>
                   <Label>Select Student</Label>
-                  <Select onValueChange={value => setTargetId(value)}>
+                  <Select onValueChange={setTargetId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select Student" />
                     </SelectTrigger>
@@ -206,7 +267,6 @@ export default function AdminDashboard() {
                   </Select>
                 </>
               )}
-
 
               <Button onClick={sendCustomNotification}>Send</Button>
             </DialogContent>
@@ -225,26 +285,35 @@ export default function AdminDashboard() {
         {/* MAP & REQUESTS */}
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-card p-4 rounded-xl">
-            <LiveFleetMap buses={buses.map(b => ({
-              id: b.id,
-              number: b.number,
-              lat: b.latitude,
-              lng: b.longitude,
-              routeId: b.routeId
-            }))} />
+            <LiveFleetMap
+              buses={buses.map(b => ({
+                id: b.id,
+                number: b.number,
+                lat: b.latitude,
+                lng: b.longitude,
+                routeId: b.routeId
+              }))}
+            />
           </div>
 
           <div className="bg-card p-5 rounded-xl">
             <h2 className="font-bold mb-3">Missed Bus Requests</h2>
+
             {pendingRequests.map(r => (
               <div key={r.id} className="border p-3 mb-2 rounded-lg">
                 <p>Student: {r.studentId}</p>
                 <p className="text-xs text-muted-foreground">
-                  {r.createdAt && formatDistanceToNow(r.createdAt.toDate(), { addSuffix: true })}
+                  {r.createdAt &&
+                    formatDistanceToNow(r.createdAt.toDate(), {
+                      addSuffix: true
+                    })}
                 </p>
+
                 <div className="flex justify-between mt-2">
                   <StatusBadge status={r.status} size="sm" />
-                  <Button size="sm" onClick={() => assignRescue(r.id)}>Assign Rescue</Button>
+                  <Button size="sm" onClick={() => setActiveRequest(r)}>
+                    Assign Rescue
+                  </Button>
                 </div>
               </div>
             ))}
@@ -259,14 +328,58 @@ export default function AdminDashboard() {
               <BusCard
                 key={bus.id}
                 bus={bus}
+                routeName={getRouteName(bus.routeId)}
+                driverName={getDriverName(bus.driverId)}
                 showActions
-                onViewDetails={() => setSelectedBus(bus.id)}
-                className={selectedBus === bus.id ? "ring-2 ring-primary" : ""}
               />
             ))}
+
+
           </div>
         </div>
 
+        {/* RESCUE ASSIGNMENT DIALOG */}
+        {activeRequest && (
+          <Dialog open onOpenChange={() => setActiveRequest(null)}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Assign Rescue Bus</DialogTitle>
+              </DialogHeader>
+
+              <p className="text-sm text-muted-foreground">
+                Student ID: {activeRequest.studentId}
+              </p>
+
+              <Label>Select Rescue Bus</Label>
+              <Select onValueChange={setRescueBusId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a bus" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rescueBuses.length === 0 ? (
+                    <SelectItem disabled value="none">
+                      No buses available for rescue
+                    </SelectItem>
+                  ) : (
+                    rescueBuses.map(bus => (
+                      <SelectItem key={bus.id} value={bus.id}>
+                        {bus.number || "Unnamed Bus"}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+
+              </Select>
+
+              <Button
+                disabled={!rescueBusId}
+                onClick={confirmRescueAssignment}
+              >
+                Confirm Assignment
+              </Button>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </DashboardLayout>
   );

@@ -55,25 +55,42 @@ export default function StudentDashboard() {
     return () => unsub();
   }, [student]);
 
-  const raiseMissedBusRequest = async () => {
-    if (!navigator.geolocation) {
-      alert('Enable location access.');
-      return;
+ const raiseMissedBusRequest = async () => {
+  if (!student?.id || !student?.busId) {
+    alert("Bus not assigned to your account. Contact admin.");
+    return;
+  }
+
+  if (!navigator.geolocation) {
+    alert("Geolocation not supported");
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    async position => {
+      try {
+        await addDoc(collection(db, "missed_bus_requests"), {
+          studentId: student.id,
+          busId: student.busId,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          status: "pending",
+          createdAt: serverTimestamp()
+        });
+
+        alert("Missed bus request sent successfully.");
+      } catch (error) {
+        console.error("Missed bus request error:", error);
+        alert("Failed to send request");
+      }
+    },
+    error => {
+      alert("Please enable location access");
+      console.error(error);
     }
+  );
+};
 
-    navigator.geolocation.getCurrentPosition(async pos => {
-      await addDoc(collection(db, 'missed_bus_requests'), {
-        studentId: student.id,
-        busId: student.busId,
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        status: 'pending',
-        createdAt: serverTimestamp(),
-      });
-
-      alert('Missed bus request sent.');
-    });
-  };
 
   return (
     <DashboardLayout>

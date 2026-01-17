@@ -16,35 +16,37 @@ import StudentDashboard from "./pages/student/StudentDashboard";
 // Driver Pages
 import DriverDashboard from "./pages/driver/DriverDashboard";
 
-// Admin Pages
 import AdminDashboard from "./pages/admin/AdminDashboard";
+import AdminBusDetails from "./pages/admin/AdminBusDetails";
+import AdminBusTrack from "./pages/admin/AdminBusTrack";
+
 
 const queryClient = new QueryClient();
 
 // Protected Route Component
 function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
   const { isAuthenticated, user } = useAuth();
-  
+
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
-  
+
   if (user && !allowedRoles.includes(user.role)) {
     return <Navigate to={`/${user.role}`} replace />;
   }
-  
+
   return <>{children}</>;
 }
 
 function AppRoutes() {
   const { isAuthenticated, user } = useAuth();
-  
+
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <Index />} />
       <Route path="/login" element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <LoginPage />} />
-      
+
       {/* Student Routes */}
       <Route path="/student" element={
         <ProtectedRoute allowedRoles={['student']}>
@@ -56,7 +58,7 @@ function AppRoutes() {
           <StudentDashboard />
         </ProtectedRoute>
       } />
-      
+
       {/* Driver Routes */}
       <Route path="/driver" element={
         <ProtectedRoute allowedRoles={['driver']}>
@@ -68,7 +70,7 @@ function AppRoutes() {
           <DriverDashboard />
         </ProtectedRoute>
       } />
-      
+
       {/* Admin Routes */}
       <Route path="/admin" element={
         <ProtectedRoute allowedRoles={['admin']}>
@@ -80,7 +82,25 @@ function AppRoutes() {
           <AdminDashboard />
         </ProtectedRoute>
       } />
-      
+      <Route
+        path="/admin/bus/:busId"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminBusDetails />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/admin/bus/:busId/track"
+        element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminBusTrack />
+          </ProtectedRoute>
+        }
+      />
+
+
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>

@@ -32,7 +32,7 @@ export interface Bus {
   capacity: number;
   routeId: string;
   driverId: string;
-  status: 'online' | 'offline' | 'delayed' | 'breakdown';
+  status: 'online' | 'offline' | 'delayed' | 'breakdown' | 'rescue_assigned';
   currentLocation?: {
     lat: number;
     lng: number;

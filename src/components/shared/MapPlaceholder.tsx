@@ -5,7 +5,7 @@ interface MapPlaceholderProps {
   buses?: Array<{
     id: string;
     number: string;
-    status: 'online' | 'offline' | 'delayed' | 'breakdown';
+    status: 'online' | 'offline' | 'delayed' | 'breakdown' | 'rescue_assigned';
     lat: number;
     lng: number;
   }>;
