@@ -290,17 +290,18 @@ export default function AdminDashboard() {
 
         {/* MAP & REQUESTS */}
         <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-card p-4 rounded-xl">
+          <div className="lg:col-span-2 bg-card rounded-xl overflow-hidden h-[420px]">
             <LiveFleetMap
               buses={buses.map(b => ({
                 id: b.id,
                 number: b.number,
                 lat: b.latitude,
                 lng: b.longitude,
-                routeId: b.routeId
+                status: b.status
               }))}
             />
           </div>
+
 
           <div className="bg-card p-5 rounded-xl">
             <h2 className="font-bold mb-3">Missed Bus Requests</h2>

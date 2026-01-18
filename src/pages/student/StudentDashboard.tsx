@@ -1,14 +1,12 @@
-import { raiseMissedBus } from '@/services/missedBusService';
-import { useEffect, useState } from 'react';
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { StatCard } from '@/components/shared/StatCard';
-import { BusCard } from '@/components/shared/BusCard';
-import { NotificationCard } from '@/components/shared/NotificationCard';
-import { MapPlaceholder } from '@/components/shared/MapPlaceholder';
-import { Button } from '@/components/ui/button';
-import { mockBuses, mockRoutes, mockStops } from '@/lib/mock-data';
-import { useAuth } from '@/contexts/AuthContext';
-import { Student, Notification } from '@/lib/types';
+import { useEffect, useState } from "react";
+import { Bus as BusType } from "@/lib/types";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { StatCard } from "@/components/shared/StatCard";
+import { BusCard } from "@/components/shared/BusCard";
+import { NotificationCard } from "@/components/shared/NotificationCard";
+import LiveFleetMap from "@/components/maps/LiveFleetMap";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Bus,
   MapPin,
@@ -16,89 +14,186 @@ import {
   AlertTriangle,
   Calendar,
   Navigation
-} from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { collection, onSnapshot, doc } from 'firebase/firestore';
-import { db } from '@/firebase';
+} from "lucide-react";
+import { Link } from "react-router-dom";
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  query,
+  where,
+  addDoc,
+  serverTimestamp
+} from "firebase/firestore";
+import { db } from "@/firebase";
+
+/* ===================== TYPES ===================== */
+
+
+type StudentUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: "student";
+  busId?: string;
+  pickupStopId?: string;
+};
+
+
+type BusDoc = {
+  id: string;
+  number: string;
+  latitude: number;
+  longitude: number;
+  status?: "online" | "delayed" | "breakdown" | "rescue_assigned";
+  routeId?: string;
+};
+
+type RouteDoc = {
+  id: string;
+  routeName: string;
+  path: { lat: number; lng: number }[];
+  startPoint?: { lat: number; lng: number };
+  endPoint?: { lat: number; lng: number };
+};
+
+type NotificationDoc = {
+  id: string;
+  title: string;
+  message: string;
+  targetType: "all" | "student" | "bus";
+  targetId?: string | null;
+  createdAt?: any;
+};
+
+
+/* ===================== COMPONENT ===================== */
 
 export default function StudentDashboard() {
   const { user, loading } = useAuth();
+  const [bus, setBus] = useState<BusType | null>(null);
+
+  const [route, setRoute] = useState<RouteDoc | null>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [missedRequest, setMissedRequest] = useState<any | null>(null);
 
   /* ===================== AUTH GUARD ===================== */
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        Loading...
+        Loading…
       </div>
     );
   }
 
   if (!user) return null;
+  const student = user as StudentUser;
 
-  const student = user as Student;
 
-  /* ===================== UI DATA ===================== */
-  const assignedBus = mockBuses.find(b => b.id === student.busId);
-  const route = mockRoutes.find(r => r.id === assignedBus?.routeId);
-  const stop = mockStops.find(s => s.id === student.stopId);
-
-  /* ===================== STATE ===================== */
-  const [liveNotifications, setLiveNotifications] =
-    useState<Notification[]>([]);
-  const [missedRequest, setMissedRequest] = useState<any | null>(null);
-
-  /* ===================== NOTIFICATIONS LISTENER ===================== */
+  /* ===================== FETCH BUS + ROUTE ===================== */
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'notifications'), snap => {
-      const filtered = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as Notification))
-        .filter(
-          n =>
-            n.targetType === 'all' ||
-            (n.targetType === 'bus' &&
-              n.targetId === student.busId) ||
-            (n.targetType === 'student' &&
-              n.targetId === student.id)
-        );
+    if (!student.busId) {
+      setBus(null);
+      setRoute(null);
+      return;
+    }
 
-      setLiveNotifications(filtered.reverse());
+    const unsub = onSnapshot(
+      doc(db, "buses", student.busId),
+      async snap => {
+        if (!snap.exists()) {
+          setBus(null);
+          setRoute(null);
+          return;
+        }
+
+        const busData = {
+          id: snap.id,
+          ...(snap.data() as Omit<BusType, "id">)
+        };
+
+        setBus(busData);
+
+        if (busData.routeId) {
+          const routeSnap = await getDoc(
+            doc(db, "routes", busData.routeId)
+          );
+
+          if (routeSnap.exists()) {
+            setRoute({
+              id: routeSnap.id,
+              ...(routeSnap.data() as Omit<RouteDoc, "id">)
+            });
+          } else {
+            setRoute(null);
+          }
+        } else {
+          setRoute(null);
+        }
+      }
+    );
+
+    return () => unsub();
+  }, [student.busId]);
+
+  /* ===================== NOTIFICATIONS ===================== */
+  useEffect(() => {
+    const q = query(
+      collection(db, "notifications"),
+      where("targetType", "in", ["all", "student"])
+    );
+
+    const unsub = onSnapshot(q, snap => {
+      const data = snap.docs.map(d => ({
+        id: d.id,
+        ...(d.data() as Omit<NotificationDoc, "id">)
+      })).filter(
+        n =>
+          n.targetType === "all" ||
+          n.targetId === student.id
+      );
+
+
+      setNotifications(data.reverse());
     });
 
     return () => unsub();
-  }, [student]);
+  }, [user.id]);
 
-  /* ===================== MISSED BUS REQUEST LISTENER ===================== */
+  /* ===================== MISSED BUS REQUEST ===================== */
   useEffect(() => {
-    if (!student?.id) return;
+    const q = query(
+      collection(db, "missed_bus_requests"),
+      where("studentId", "==", user.id),
+      where("status", "in", ["pending", "assigned"])
+    );
 
-    const ref = doc(db, 'missed_bus_requests', student.id);
-
-    const unsub = onSnapshot(ref, snap => {
-      if (snap.exists()) {
-        setMissedRequest({ id: snap.id, ...snap.data() });
+    const unsub = onSnapshot(q, snap => {
+      if (!snap.empty) {
+        setMissedRequest({ id: snap.docs[0].id, ...snap.docs[0].data() });
       } else {
         setMissedRequest(null);
       }
     });
 
     return () => unsub();
-  }, [student.id]);
+  }, [user.id]);
 
-  /* ===================== RAISE MISSED BUS ===================== */
   const raiseMissedBusRequest = async () => {
-    if (!student?.id) return;
-    if (!navigator.geolocation) return;
+    if (!bus) return;
 
-    navigator.geolocation.getCurrentPosition(
-      async position => {
-        await raiseMissedBus(
-          student.id,
-          position.coords.latitude,
-          position.coords.longitude
-        );
-      },
-      error => console.error(error)
-    );
+    navigator.geolocation.getCurrentPosition(async pos => {
+      await addDoc(collection(db, "missed_bus_requests"), {
+        studentId: user.id,
+        busId: bus.id,
+        routeId: bus.routeId || null,
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        status: "pending",
+        createdAt: serverTimestamp()
+      });
+    });
   };
 
   /* ===================== UI ===================== */
@@ -109,68 +204,48 @@ export default function StudentDashboard() {
         {/* HEADER */}
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">
-            Good Morning, {student.name.split(' ')[0]}
+            Good Morning, {user.name?.split(" ")[0]}
           </h1>
+
           <Link to="/student/track">
             <Button variant="hero">
-              <Navigation className="w-4 h-4" /> Track My Bus
+              <Navigation className="w-4 h-4" />
+              Track My Bus
             </Button>
           </Link>
         </div>
 
         {/* STATS */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="My Bus"
-            value={assignedBus?.number || 'N/A'}
-            icon={<Bus />}
-          />
-          <StatCard
-            title="Pickup Stop"
-            value={stop?.name || 'N/A'}
-            icon={<MapPin />}
-          />
-          <StatCard
-            title="Pickup Time"
-            value={stop?.arrivalTime || '08:00'}
-            icon={<Clock />}
-          />
-          <StatCard
-            title="Pass Validity"
-            value="185 days"
-            icon={<Calendar />}
-          />
+          <StatCard title="My Bus" value={bus?.number || "N/A"} icon={<Bus />} />
+          <StatCard title="Pickup Stop" value="Assigned Stop" icon={<MapPin />} />
+          <StatCard title="Pickup Time" value="08:00" icon={<Clock />} />
+          <StatCard title="Pass Validity" value="185 days" icon={<Calendar />} />
         </div>
 
         {/* MAP + ACTIONS */}
         <div className="grid lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-card p-4 rounded-xl">
-            <MapPlaceholder
-              buses={
-                assignedBus
-                  ? [
-                      {
-                        id: assignedBus.id,
-                        number: assignedBus.number,
-                        status: assignedBus.status,
-                        lat:
-                          assignedBus.currentLocation?.lat || 0,
-                        lng:
-                          assignedBus.currentLocation?.lng || 0
-                      }
-                    ]
-                  : []
-              }
-              showRoute
-              height="h-[300px]"
-            />
+          <div className="lg:col-span-2 bg-card rounded-xl overflow-hidden h-[360px]">
+            {bus && (
+              <LiveFleetMap
+                buses={[
+                  {
+                    id: bus.id,
+                    number: bus.number,
+                    lat: bus.latitude,
+                    lng: bus.longitude,
+                    status: bus.status
+                  }
+                ]}
+                route={route}
+                showRoute
+              />
+            )}
           </div>
 
-          {/* RIGHT SIDE */}
           <div className="space-y-4">
-            {assignedBus && <BusCard bus={assignedBus} />}
+            {bus && <BusCard bus={bus} compact />}
 
-            {/* MISSED BUS BUTTON */}
             <Button
               variant="warning"
               className="w-full"
@@ -180,26 +255,15 @@ export default function StudentDashboard() {
               I Missed My Bus
             </Button>
 
-            {/* MISSED BUS STATUS CARD (JUST BELOW BUTTON) */}
             {missedRequest && (
               <div className="bg-card p-4 rounded-xl border border-orange-300">
                 <h3 className="font-semibold flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 text-orange-500" />
                   Missed Bus Request
                 </h3>
-
-                <p className="text-sm mt-1">
-                  Status:{' '}
-                  <span className="font-medium capitalize">
-                    {missedRequest.status}
-                  </span>
+                <p className="text-sm mt-1 capitalize">
+                  Status: {missedRequest.status}
                 </p>
-
-                {missedRequest.assignedBusId && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Rescue bus has been assigned. Please wait.
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -208,8 +272,7 @@ export default function StudentDashboard() {
         {/* NOTIFICATIONS */}
         <div className="bg-card p-5 rounded-xl">
           <h2 className="font-bold mb-3">Notifications</h2>
-
-          {liveNotifications.slice(0, 3).map(n => (
+          {notifications.slice(0, 3).map(n => (
             <NotificationCard key={n.id} notification={n} />
           ))}
         </div>

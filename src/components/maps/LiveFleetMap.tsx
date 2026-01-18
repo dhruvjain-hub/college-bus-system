@@ -6,8 +6,6 @@ import {
   InfoWindow,
   useLoadScript
 } from "@react-google-maps/api";
-import { doc, getDoc } from "firebase/firestore";
-import { db } from "@/firebase";
 
 /* ===================== TYPES ===================== */
 
@@ -16,16 +14,20 @@ export type FleetBus = {
   number: string;
   lat: number;
   lng: number;
-  routeId?: string;
+  status?: "online" | "delayed" | "breakdown" | "rescue_assigned";
 };
 
-type RouteDoc = {
-  routeName: string;
+export type FleetRoute = {
+  id: string;
+  routeName?: string;
   path: { lat: number; lng: number }[];
+  startPoint?: { lat: number; lng: number };
+  endPoint?: { lat: number; lng: number };
 };
 
 interface LiveFleetMapProps {
   buses: FleetBus[];
+  route?: FleetRoute | null;
   showRoute?: boolean;
 }
 
@@ -33,16 +35,20 @@ interface LiveFleetMapProps {
 
 const containerStyle = {
   width: "100%",
-  height: "400px"
+  height: "100%"
 };
 
-const defaultCenter = { lat: 26.9124, lng: 75.7873 }; // Jaipur fallback
+const defaultCenter = { lat: 26.9124, lng: 75.7873 };
+
+const STATUS_COLOR: Record<string, string> = {
+  online: "#22c55e",
+  delayed: "#facc15",
+  breakdown: "#ef4444",
+  rescue_assigned: "#f97316"
+};
 
 /* ===================== HELPERS ===================== */
 
-/**
- * Split route into covered & remaining based on closest point
- */
 function splitRoute(
   path: { lat: number; lng: number }[],
   busLat: number,
@@ -52,7 +58,8 @@ function splitRoute(
   let minDist = Infinity;
 
   path.forEach((p, i) => {
-    const d = Math.abs(p.lat - busLat) + Math.abs(p.lng - busLng);
+    const d =
+      Math.abs(p.lat - busLat) + Math.abs(p.lng - busLng);
     if (d < minDist) {
       minDist = d;
       closestIndex = i;
@@ -69,58 +76,43 @@ function splitRoute(
 
 export default function LiveFleetMap({
   buses,
+  route,
   showRoute = false
 }: LiveFleetMapProps) {
   const { isLoaded } = useLoadScript({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY
   });
 
-  const [selectedBus, setSelectedBus] = useState<FleetBus | null>(null);
-  const [route, setRoute] = useState<RouteDoc | null>(null);
+  const [selectedBus, setSelectedBus] =
+    useState<FleetBus | null>(null);
 
-  /* ===================== LOAD ROUTE ON BUS CLICK ===================== */
-
-  const handleBusClick = async (bus: FleetBus) => {
-    setSelectedBus(bus);
-
-    if (!showRoute || !bus.routeId) {
-      setRoute(null);
-      return;
+  /* 🔥 AUTO-SELECT BUS (CRITICAL FIX) */
+  useEffect(() => {
+    if (buses.length === 1) {
+      setSelectedBus(buses[0]);
     }
-
-    try {
-      const snap = await getDoc(doc(db, "routes", bus.routeId));
-      if (snap.exists()) {
-        setRoute(snap.data() as RouteDoc);
-      } else {
-        setRoute(null);
-      }
-    } catch (err) {
-      console.error("Failed to load route:", err);
-      setRoute(null);
-    }
-  };
+  }, [buses]);
 
   if (!isLoaded) {
     return (
-      <div className="flex items-center justify-center h-[400px] text-sm text-muted-foreground">
-        Loading Map...
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        Loading Map…
       </div>
     );
   }
 
+  const center = buses.length
+    ? { lat: buses[0].lat, lng: buses[0].lng }
+    : defaultCenter;
+
   return (
     <GoogleMap
       mapContainerStyle={containerStyle}
-      center={
-        buses.length
-          ? { lat: buses[0].lat, lng: buses[0].lng }
-          : defaultCenter
-      }
+      center={center}
       zoom={13}
     >
-      {/* ===================== ROUTE DRAWING ===================== */}
-      {showRoute && route && selectedBus && route.path?.length > 1 && (() => {
+      {/* ===================== ROUTE ===================== */}
+      {showRoute && route && route.path?.length > 1 && selectedBus && (() => {
         const { covered, remaining } = splitRoute(
           route.path,
           selectedBus.lat,
@@ -129,7 +121,6 @@ export default function LiveFleetMap({
 
         return (
           <>
-            {/* COVERED ROUTE */}
             <Polyline
               path={covered}
               options={{
@@ -139,7 +130,6 @@ export default function LiveFleetMap({
               }}
             />
 
-            {/* REMAINING ROUTE + DIRECTION ARROWS */}
             <Polyline
               path={remaining}
               options={{
@@ -150,7 +140,7 @@ export default function LiveFleetMap({
                   {
                     icon: {
                       path:
-                        window.google?.maps.SymbolPath
+                        window.google.maps.SymbolPath
                           .FORWARD_CLOSED_ARROW,
                       scale: 3,
                       strokeColor: "#ef4444"
@@ -165,12 +155,39 @@ export default function LiveFleetMap({
         );
       })()}
 
+      {/* ===================== START / END ===================== */}
+      {showRoute && route?.startPoint && (
+        <Marker
+          position={route.startPoint}
+          icon={{
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: "#22c55e",
+            fillOpacity: 1,
+            strokeWeight: 0
+          }}
+        />
+      )}
+
+      {showRoute && route?.endPoint && (
+        <Marker
+          position={route.endPoint}
+          icon={{
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 6,
+            fillColor: "#ef4444",
+            fillOpacity: 1,
+            strokeWeight: 0
+          }}
+        />
+      )}
+
       {/* ===================== BUS MARKERS ===================== */}
       {buses.map(bus => (
         <Marker
           key={bus.id}
           position={{ lat: bus.lat, lng: bus.lng }}
-          onClick={() => handleBusClick(bus)}
+          onClick={() => setSelectedBus(bus)}
           label={{
             text: bus.number,
             color: "white",
@@ -178,15 +195,13 @@ export default function LiveFleetMap({
             fontWeight: "bold"
           }}
           icon={{
-            path:
-              "M4 16c0 1.1.9 2 2 2s2-.9 2-2h6c0 1.1.9 2 2 2s2-.9 2-2h1V6H3v10h1zm0-8h14v5H4V8zm12-6H6c-1.1 0-2 .9-2 2v2h14V4c0-1.1-.9-2-2-2z",
-            fillColor: "#2563eb",
+            path: window.google.maps.SymbolPath.CIRCLE,
+            scale: 10,
+            fillColor:
+              STATUS_COLOR[bus.status || "online"],
             fillOpacity: 1,
-            scale: 1.6,
-            strokeWeight: 1,
-            anchor: window.google
-              ? new window.google.maps.Point(10, 20)
-              : undefined
+            strokeColor: "white",
+            strokeWeight: 2
           }}
         />
       ))}
@@ -195,17 +210,16 @@ export default function LiveFleetMap({
       {selectedBus && (
         <InfoWindow
           position={{
-            lat: selectedBus.lat,
+            lat: selectedBus.lat + 0.005,
             lng: selectedBus.lng
           }}
-          onCloseClick={() => {
-            setSelectedBus(null);
-            setRoute(null);
-          }}
+          onCloseClick={() => setSelectedBus(null)}
         >
           <div className="text-sm">
-            <p className="font-semibold">Bus: {selectedBus.number}</p>
-            {route && (
+            <p className="font-semibold">
+              Bus: {selectedBus.number}
+            </p>
+            {route?.routeName && (
               <p className="text-muted-foreground">
                 Route: {route.routeName}
               </p>

@@ -1,16 +1,27 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, getDoc } from "firebase/firestore";
 import { db } from "@/firebase";
 import LiveFleetMap from "@/components/maps/LiveFleetMap";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Button } from "@/components/ui/button";
 
+type BusDoc = {
+  id: string;
+  number: string;
+  latitude: number;
+  longitude: number;
+  status?: "online" | "delayed" | "breakdown" | "rescue_assigned";
+  routeId?: string;
+};
+
+
 export default function AdminBusTrack() {
   const { busId } = useParams<{ busId: string }>();
   const navigate = useNavigate();
+  const [bus, setBus] = useState<BusDoc | null>(null);
 
-  const [bus, setBus] = useState<any | null>(null);
+  const [route, setRoute] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,14 +29,37 @@ export default function AdminBusTrack() {
 
     const unsub = onSnapshot(
       doc(db, "buses", busId),
-      snap => {
+      async snap => {
         if (!snap.exists()) {
           setBus(null);
+          setRoute(null);
           setLoading(false);
           return;
         }
+        const busData = {
+          id: snap.id,
+          ...(snap.data() as Omit<BusDoc, "id">)
+        };
 
-        setBus({ id: snap.id, ...snap.data() });
+        setBus(busData);
+
+        if (busData.routeId) {
+          const routeSnap = await getDoc(
+            doc(db, "routes", busData.routeId)
+          );
+
+          if (routeSnap.exists()) {
+            setRoute({
+              id: routeSnap.id,
+              ...routeSnap.data()
+            });
+          } else {
+            setRoute(null);
+          }
+        } else {
+          setRoute(null);
+        }
+
         setLoading(false);
       }
     );
@@ -66,9 +100,10 @@ export default function AdminBusTrack() {
                 number: bus.number,
                 lat: bus.latitude,
                 lng: bus.longitude,
-                routeId: bus.routeId
+                status: bus.status
               }
             ]}
+            route={route}
             showRoute
           />
         </div>
