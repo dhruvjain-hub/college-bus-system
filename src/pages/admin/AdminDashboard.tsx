@@ -184,6 +184,12 @@ export default function AdminDashboard() {
   const getDriverName = (driverId?: string) =>
     drivers.find(d => d.id === driverId)?.name || "No driver";
 
+  const getStudentName = (studentId: string) => {
+    const student = students.find(s => s.id === studentId);
+    return student ? student.name : "Unknown Student";
+  };
+
+
   /* ===================== UI ===================== */
   return (
     <DashboardLayout>
@@ -301,7 +307,12 @@ export default function AdminDashboard() {
 
             {pendingRequests.map(r => (
               <div key={r.id} className="border p-3 mb-2 rounded-lg">
-                <p>Student: {r.studentId}</p>
+                <p className="font-medium">
+                  Student: {getStudentName(r.studentId)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {students.find(s => s.id === r.studentId)?.email}
+                </p>
                 <p className="text-xs text-muted-foreground">
                   {r.createdAt &&
                     formatDistanceToNow(r.createdAt.toDate(), {

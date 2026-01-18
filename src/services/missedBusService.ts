@@ -1,10 +1,29 @@
-import { addDoc, collection } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc
+} from "firebase/firestore";
 import { db } from "../firebase";
-import { doc, updateDoc } from "firebase/firestore";
 
+export const raiseMissedBus = async (
+  studentId: string,
+  lat: number,
+  lng: number
+) => {
+  // 🔥 studentId = documentId
+  const requestRef = doc(db, "missed_bus_requests", studentId);
 
-export const raiseMissedBus = async (studentId: string, lat: number, lng: number) => {
-  await addDoc(collection(db, "missed_bus_requests"), {
+  const existing = await getDoc(requestRef);
+
+  // Agar already pending hai → kuch mat karo
+  if (existing.exists() && existing.data().status === "pending") {
+    console.log("Already raised missed bus request");
+    return;
+  }
+
+  // Nahi hai → create / overwrite
+  await setDoc(requestRef, {
     studentId,
     latitude: lat,
     longitude: lng,
@@ -13,9 +32,8 @@ export const raiseMissedBus = async (studentId: string, lat: number, lng: number
   });
 };
 
-const assignRescue = async (id: string) => {
-  await updateDoc(doc(db, "missed_bus_requests", id), {
+export const assignRescue = async (studentId: string) => {
+  await updateDoc(doc(db, "missed_bus_requests", studentId), {
     status: "assigned"
   });
 };
-
