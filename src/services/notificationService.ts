@@ -1,23 +1,20 @@
-// src/services/notificationService.ts
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
-import { db } from "@/firebase";
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/firebase';
 
-export async function sendNotification(
-  title: string,
-  message: string,
-  targetType: "all" | "bus" | "student",
-  targetId: string | null = null
+async function sendEmergencyAlert(
+  driverId: string,
+  message: string
 ) {
-  await addDoc(collection(db, "notifications"), {
-    title,
+  await addDoc(collection(db, 'notifications'), {
+    type: 'EMERGENCY',
+    driverId,
     message,
-
-    // 🔥 REQUIRED FIELDS
-    type: "info",           // UI depends on this
-    targetType,             // student dashboard filter depends on this
-    targetId,               // null allowed
-    read: false,            // UI badge depends on this
-
+    target: 'admin',
+    read: false,
     createdAt: serverTimestamp(),
   });
 }
+
+export const notificationService = {
+  sendEmergencyAlert,
+};

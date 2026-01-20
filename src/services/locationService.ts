@@ -1,10 +1,31 @@
-import { doc, updateDoc } from "firebase/firestore";
-import { db } from "../firebase";
+import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '@/firebase';
 
-export const updateLocation = async (busId: string, lat: number, lng: number) => {
-  await updateDoc(doc(db, "buses", busId), {
-    latitude: lat,
-    longitude: lng,
-    lastUpdated: new Date()
+async function updateLocation(
+  busId: string,
+  location: {
+    lat: number;
+    lng: number;
+    speed?: number | null;
+  }
+) {
+  if (!busId) return;
+
+  await updateDoc(doc(db, 'buses', busId), {
+    location,
+    lastUpdated: serverTimestamp(),
   });
+}
+
+async function stopTracking(busId: string) {
+  if (!busId) return;
+
+  await updateDoc(doc(db, 'buses', busId), {
+    lastUpdated: serverTimestamp(),
+  });
+}
+
+export const locationService = {
+  updateLocation,
+  stopTracking,
 };
