@@ -10,21 +10,30 @@ import Index from "./pages/Index";
 import LoginPage from "./pages/LoginPage";
 import NotFound from "./pages/NotFound";
 
-// Student Pages
+// Student
 import StudentDashboard from "./pages/student/StudentDashboard";
+import StudentNotifications from "@/pages/student/StudentNotifications";
+import StudentLayout from "@/components/layout/StudentLayout";
 
-// Driver Pages
+// Driver
 import DriverDashboard from "./pages/driver/DriverDashboard";
 
+// Admin
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminBusDetails from "./pages/admin/AdminBusDetails";
 import AdminBusTrack from "./pages/admin/AdminBusTrack";
 
-
 const queryClient = new QueryClient();
 
-// Protected Route Component
-function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode; allowedRoles: string[] }) {
+/* ===================== PROTECTED ROUTE ===================== */
+
+function ProtectedRoute({
+  children,
+  allowedRoles,
+}: {
+  children: React.ReactNode;
+  allowedRoles: string[];
+}) {
   const { isAuthenticated, user } = useAuth();
 
   if (!isAuthenticated) {
@@ -38,74 +47,95 @@ function ProtectedRoute({ children, allowedRoles }: { children: React.ReactNode;
   return <>{children}</>;
 }
 
+/* ===================== ROUTES ===================== */
+
 function AppRoutes() {
   const { isAuthenticated, user } = useAuth();
 
   return (
     <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <Index />} />
-      <Route path="/login" element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <LoginPage />} />
+      {/* Public */}
+      <Route
+        path="/"
+        element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <Index />}
+      />
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to={`/${user?.role}`} /> : <LoginPage />}
+      />
 
-      {/* Student Routes */}
-      <Route path="/student" element={
-        <ProtectedRoute allowedRoles={['student']}>
-          <StudentDashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="/student/*" element={
-        <ProtectedRoute allowedRoles={['student']}>
-          <StudentDashboard />
-        </ProtectedRoute>
-      } />
+      {/* STUDENT ROUTES */}
+      <Route
+        path="/student"
+        element={
+          <ProtectedRoute allowedRoles={["student"]}>
+            <StudentLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<StudentDashboard />} />
+        <Route path="notifications" element={<StudentNotifications />} />
+      </Route>
 
-      {/* Driver Routes */}
-      <Route path="/driver" element={
-        <ProtectedRoute allowedRoles={['driver']}>
-          <DriverDashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="/driver/*" element={
-        <ProtectedRoute allowedRoles={['driver']}>
-          <DriverDashboard />
-        </ProtectedRoute>
-      } />
+      {/* DRIVER ROUTES */}
+      <Route
+        path="/driver"
+        element={
+          <ProtectedRoute allowedRoles={["driver"]}>
+            <DriverDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/driver/*"
+        element={
+          <ProtectedRoute allowedRoles={["driver"]}>
+            <DriverDashboard />
+          </ProtectedRoute>
+        }
+      />
 
-      {/* Admin Routes */}
-      <Route path="/admin" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <AdminDashboard />
-        </ProtectedRoute>
-      } />
-      <Route path="/admin/*" element={
-        <ProtectedRoute allowedRoles={['admin']}>
-          <AdminDashboard />
-        </ProtectedRoute>
-      } />
+      {/* ADMIN ROUTES */}
+      <Route
+        path="/admin"
+        element={
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute allowedRoles={["admin"]}>
+            <AdminDashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/admin/bus/:busId"
         element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={["admin"]}>
             <AdminBusDetails />
           </ProtectedRoute>
         }
       />
-
       <Route
         path="/admin/bus/:busId/track"
         element={
-          <ProtectedRoute allowedRoles={['admin']}>
+          <ProtectedRoute allowedRoles={["admin"]}>
             <AdminBusTrack />
           </ProtectedRoute>
         }
       />
-
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
 }
+
+/* ===================== APP ===================== */
 
 const App = () => (
   <QueryClientProvider client={queryClient}>

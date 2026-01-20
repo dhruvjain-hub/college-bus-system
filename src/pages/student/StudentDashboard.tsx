@@ -21,9 +21,9 @@ import {
   getDoc,
   onSnapshot,
   query,
-  where,
   setDoc,
-  serverTimestamp
+  serverTimestamp,
+  orderBy
 } from "firebase/firestore";
 import { db } from "@/firebase";
 import { Bus as FullBus } from "@/lib/types";
@@ -56,6 +56,7 @@ type NotificationDoc = {
   message: string;
   targetType: "all" | "student" | "bus";
   targetId?: string;
+  createdAt?: any;
 };
 
 /* ===================== COMPONENT ===================== */
@@ -121,10 +122,13 @@ export default function StudentDashboard() {
     return () => unsub();
   }, [student.busId]);
 
-  /* ===================== NOTIFICATIONS ===================== */
+  /* ===================== NOTIFICATIONS (FIXED ORDERING) ===================== */
 
   useEffect(() => {
-    const q = query(collection(db, "notifications"));
+    const q = query(
+      collection(db, "notifications"),
+      orderBy("createdAt", "desc") // 🔥 FIX
+    );
 
     const unsub = onSnapshot(q, snap => {
       const data = snap.docs
@@ -136,13 +140,13 @@ export default function StudentDashboard() {
             (n.targetType === "bus" && n.targetId === student.busId)
         );
 
-      setNotifications(data.reverse());
+      setNotifications(data); // 🔥 NO reverse
     });
 
     return () => unsub();
   }, [student.id, student.busId]);
 
-  /* ===================== MISSED BUS (SINGLE REQUEST ONLY) ===================== */
+  /* ===================== MISSED BUS ===================== */
 
   useEffect(() => {
     const ref = doc(db, "missed_bus_requests", student.id);
@@ -174,23 +178,22 @@ export default function StudentDashboard() {
     });
   };
 
-  /* ===================== MAP BUS (TYPE SAFE) ===================== */
+  /* ===================== MAP BUS ===================== */
 
   const mapBusForUI: FullBus | null = bus
-  ? {
-      id: bus.id,
-      number: bus.number,
-      status: bus.status,
-      capacity: 0,
-      driverId: "",
-      routeId: bus.routeId ?? "",
-      currentLocation: {
-        lat: bus.latitude,
-        lng: bus.longitude
+    ? {
+        id: bus.id,
+        number: bus.number,
+        status: bus.status,
+        capacity: 0,
+        driverId: "",
+        routeId: bus.routeId ?? "",
+        currentLocation: {
+          lat: bus.latitude,
+          lng: bus.longitude
+        }
       }
-    }
-  : null;
-
+    : null;
 
   /* ===================== UI ===================== */
 
@@ -252,22 +255,10 @@ export default function StudentDashboard() {
               <AlertTriangle className="w-4 h-4" />
               {missedRequest ? "Request Already Raised" : "I Missed My Bus"}
             </Button>
-
-            {missedRequest && (
-              <div className="bg-card p-4 rounded-xl border border-orange-300">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-orange-500" />
-                  Missed Bus Request
-                </h3>
-                <p className="text-sm mt-1 capitalize">
-                  Status: {missedRequest.status}
-                </p>
-              </div>
-            )}
           </div>
         </div>
 
-        {/* NOTIFICATIONS */}
+        {/* NOTIFICATIONS PREVIEW */}
         <div className="bg-card p-5 rounded-xl">
           <h2 className="font-bold mb-3">Notifications</h2>
           {notifications.slice(0, 3).map(n => (
